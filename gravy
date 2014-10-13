@@ -1,0 +1,202 @@
+#!/usr/bin/env php
+<?php
+namespace Gravy;
+
+/**
+ * Gravy Build Automation
+ */
+class Gravy {
+    protected static $directory;
+    
+    /**
+     * @var string 
+     */
+    protected static $original_build;
+    
+    /**
+     * @var array 
+     */
+    protected static $build;
+    
+    /**
+     * @var array 
+     */
+    protected static $variables;
+    
+    /**
+     * @var array 
+     */
+    protected static $steps;
+    
+    /**
+     * 
+     * @param type $arguments
+     */
+    public static function execute($arguments = array()){
+        try{
+            $start = microtime(true);
+            self::$directory = getcwd() . '/';
+            
+            self::loadBuild();
+            
+            self::build();
+            
+        } catch(\Exception $ex){
+            Gravy::error($ex->getMessage());
+        }
+        $finish = microtime(true);
+        self::output(sprintf("Build finished in %s seconds", number_format($finish - $start, 2)));
+    }
+    
+    /**
+     * Execute our build
+     */
+    public static function build(){
+        self::output(sprintf("Starting build [%s v%s]", self::$build['name'], self::$build['version']));
+        foreach(self::$steps as $step => $callbacks){
+            self::output(sprintf("[%s]", $step));
+            if(!self::runCallbacks($callbacks)){
+                //failed to run build step, throw \Exception
+                throw new \Exception(sprintf("[%s] Failed", $step));
+            }
+        }
+    }
+    
+    /**
+     * Run callbacks
+     * @param type $callbacks
+     */
+    public static function runCallbacks($callbacks){
+        $failure = false;
+        foreach($callbacks as $function => $variables){
+            $callable = str_replace("/", "\\", $function);
+            if(!is_callable($callable)){
+                self::error(sprintf("Invalid callable %s", $callable));
+                $failure = true;
+                continue;
+            }
+            $callVariables = [];
+            if(isset($variables) && is_array($variables)){
+                foreach($variables as $var => $value){
+                    $callVariables[$var] = self::parseVariable($value);
+                }
+            }
+            
+            if(true !== ($response = call_user_func_array($callable, $callVariables))){
+                self::error(sprintf("%s has failed: %s", $callable, $response));
+                $failure = true;
+            }
+        }
+        
+        return !$failure;
+    }
+    
+    /**
+     * 
+     * @param string $s
+     * @return string
+     */
+    public static function path($s = ''){
+        return self::$directory . $s;
+    }
+    
+    /**
+     * 
+     */
+    public static function loadBuild(){
+        if(!is_file(self::path('build.json'))){
+            throw new \Exception(sprintf("Invalid build file, could not load: %s", self::path('build.json')));
+        }
+        
+        self::$original_build = file_get_contents(self::path('build.json'));
+        
+        self::$build = json_decode(self::$original_build, true);
+        if(self::$build === FALSE){
+            throw new \Exception("Invalid json");
+        }
+        
+        //load variables
+        if(isset(self::$build['variables'])){
+            self::$variables = self::$build['variables'];
+        } else {
+            self::$variables = [];
+        }
+        
+        self::$variables['working_dir'] = self::path();
+        
+        //load steps
+        if(isset(self::$build['steps'])){
+            self::$steps = self::$build['steps'];
+        } else {
+            self::$steps = [];
+        }
+    }
+    
+    /**
+     * @param type $string
+     * @return mixed
+     */
+    public static function parseVariable($str){
+        foreach(self::$variables as $var => $value){
+            if(is_string($value)){
+                $str = str_replace("{{".$var."}}", $value, $str);
+            } else {
+                if($str === "{{".$var."}}"){
+                    return $value;
+                }
+            }
+        }
+        return $str;
+    }
+    
+    /**
+     * Output
+     * @param string $s
+     */
+    public static function output($s = ''){
+        fwrite(STDOUT, "$s\n");
+    }
+    
+    /**
+     * Error output
+     * @param string $s
+     */
+    public static function error($s = ''){
+        fwrite(STDERR, "$s\n");
+    }
+    
+    /**
+     * Helper functions
+     */
+    
+    /**
+     * Clean given directory
+     */
+    public static function clean($dir){
+        self::output(sprintf("removing %s", $dir));
+        $files = scandir($dir);
+        foreach($files as $file){
+            if($file === "." || $file === ".." || $file === "./"){
+                continue;
+            }
+            if(is_dir($dir  . '/' . $file)){
+                self::clean($dir . '/' . $file);
+                rmdir($dir  . '/' . $file);
+            } else {
+                unlink($dir  . '/' . $file);
+            }
+        }
+        return true;
+    }
+    
+    /**
+     * Shell exec
+     */
+    public static function exec($command_str){
+        passthru($command_str);
+        return true;
+    }
+}
+
+
+Gravy::execute($argv);

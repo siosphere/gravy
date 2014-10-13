@@ -1,0 +1,32 @@
+{
+    "name": "Gravy",
+    "version": "0.0.1",
+    "steps": {
+        "clean": {
+            "Gravy/Gravy::clean": {
+                "dir": "{{working_dir}}build"
+            }
+        },
+        "build": {
+            "Gravy/Gravy::exec": {
+                "command": "git clone {{checkout_url}} {{working_dir}}build"
+            }
+        },
+        "test": {
+            
+        },
+        "deploy": {
+            "Gravy/Gravy::sshDeploy": {
+                "params": "{{prod_config}}"
+            }
+        }
+    },
+    "variables": {
+        "prod_config": {
+            "host": "localhost",
+            "user": "test",
+            "dir": "/var/www/html/"
+        },
+        "checkout_url": "https://github.com/siosphere/gravy.git"
+    }
+}
